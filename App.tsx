@@ -10,10 +10,15 @@ import {
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 import {
   fetchCommitDiff,
   fetchCurrentReadme,
 } from './src/services/githubService';
+import {
+  analyzeDocumentationRot,
+  AnalysisReport,
+} from './src/services/aiService';
 
 export default function App() {
   const [owner, setOwner] = useState('');
@@ -21,26 +26,24 @@ export default function App() {
   const [sha, setSha] = useState('');
 
   const [loading, setLoading] = useState(false);
-  const [commitMessage, setCommitMessage] = useState('');
-  const [diffData, setDiffData] = useState('');
-  const [readmeData, setReadmeData] = useState('');
+  const [loadingStage, setLoadingStage] = useState('');
   const [error, setError] = useState('');
 
-  const handleFetchData = async () => {
-    // Basic validation
+  // Day 2 Core Intelligence State
+  const [report, setReport] = useState<AnalysisReport | null>(null);
+
+  const handleRunAudit = async () => {
     if (!owner || !repo || !sha) {
-      setError('Please fill in all three repository fields.');
+      setError('Please provide all three repository inputs.');
       return;
     }
 
     setLoading(true);
     setError('');
-    setCommitMessage('');
-    setDiffData('');
-    setReadmeData('');
+    setReport(null);
 
     try {
-      // 1. Fire off the GitHub API requests
+      setLoadingStage('Pulling codebase details from GitHub...');
       const commitResult = await fetchCommitDiff(
         owner.trim(),
         repo.trim(),
@@ -48,213 +51,241 @@ export default function App() {
       );
       const readmeResult = await fetchCurrentReadme(owner.trim(), repo.trim());
 
-      // 2. Update local state with the results
-      setCommitMessage(commitResult.message);
-      setDiffData(commitResult.diff);
-      setReadmeData(readmeResult);
-    } catch (err: any) {
-      setError(
-        err.message ||
-          'Failed to fetch data from GitHub. Check your configuration/Token.',
+      setLoadingStage('Gemini analyzing code logic for documentation rot...');
+      const aiReport = await analyzeDocumentationRot(
+        commitResult.message,
+        commitResult.diff,
+        readmeResult,
       );
+
+      setReport(aiReport);
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during verification.');
     } finally {
       setLoading(false);
+      setLoadingStage('');
     }
   };
+
+  // Helper function to color-code the dashboard UI dynamically based on risk level
+  const getSeverityColors = (severity: string) => {
+    switch (severity) {
+      case 'High':
+        return { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' };
+      case 'Medium':
+        return { bg: '#fef3c7', border: '#d97706', text: '#92400e' };
+      case 'Low':
+        return { bg: '#e0e7ff', border: '#4f46e5', text: '#3730a3' };
+      default:
+        return { bg: '#dcfce7', border: '#22c55e', text: '#166534' };
+    }
+  };
+
+  const currentTheme = report
+    ? getSeverityColors(report.severity)
+    : { bg: '#26262f', border: '#444', text: '#fff' };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1e1e24" />
 
       <View style={styles.header}>
-        <Text style={styles.title}>DocRot Sync</Text>
+        <Text style={styles.title}>DocRot Guardian</Text>
         <Text style={styles.subtitle}>
-          Day 1: GitHub API Integration Handshake
+          Day 2: Autonomous Intelligence Layer
         </Text>
       </View>
 
-      {/* Input Configuration Panel */}
+      {/* Input Module Container */}
       <View style={styles.inputContainer}>
-        <Text style={styles.inputLabel}>GitHub Owner / Username</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g., facebook"
+          placeholder="GitHub Username"
           placeholderTextColor="#666"
           value={owner}
           onChangeText={setOwner}
           autoCapitalize="none"
           autoCorrect={false}
         />
-
-        <Text style={styles.inputLabel}>Repository Name</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g., react-native"
+          placeholder="Repository Name"
           placeholderTextColor="#666"
           value={repo}
           onChangeText={setRepo}
           autoCapitalize="none"
           autoCorrect={false}
         />
-
-        <Text style={styles.inputLabel}>Target Commit SHA</Text>
         <TextInput
           style={styles.input}
-          placeholder="Paste full alphanumeric commit SHA"
+          placeholder="Commit SHA"
           placeholderTextColor="#666"
           value={sha}
-          onChangeText={setSha}
           autoCapitalize="none"
           autoCorrect={false}
+          onChangeText={setSha}
         />
       </View>
 
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleFetchData}
+        onPress={handleRunAudit}
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color="#fff" size="small" />
+            <Text style={styles.loadingStageText}>{loadingStage}</Text>
+          </View>
         ) : (
-          <Text style={styles.buttonText}>Test Data Handshake</Text>
+          <Text style={styles.buttonText}>Audit Documentation Alignment</Text>
         )}
       </TouchableOpacity>
 
       {error ? <Text style={styles.errorText}>❌ {error}</Text> : null}
 
-      {/* Real-time Streaming Logs View */}
+      {/* Main Intelligent Report Container */}
       <ScrollView
-        style={styles.logScrollView}
+        style={styles.dashboardView}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {commitMessage ? (
-          <View style={styles.logSection}>
-            <Text style={styles.sectionLabel}>💬 Commit Intent Message:</Text>
-            <View style={styles.codeBox}>
-              <Text style={styles.codeText}>{commitMessage}</Text>
-            </View>
-          </View>
-        ) : null}
-
-        {diffData ? (
-          <View style={styles.logSection}>
-            <Text style={styles.sectionLabel}>🛠️ Extracted Code Diff:</Text>
-            <View style={styles.codeBox}>
-              <Text style={styles.codeText} numberOfLines={15}>
-                {diffData}
+        {report && (
+          <View>
+            {/* Dynamic Diagnostics Status Card */}
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: currentTheme.bg,
+                  borderColor: currentTheme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.cardTitle, { color: currentTheme.border }]}>
+                Rot Status: {report.severity} Rot Risk Detected
+              </Text>
+              <Text
+                style={[styles.cardExplanation, { color: currentTheme.text }]}
+              >
+                {report.explanation}
               </Text>
             </View>
-          </View>
-        ) : null}
 
-        {readmeData ? (
-          <View style={styles.logSection}>
-            <Text style={styles.sectionLabel}>
-              📄 Existing Remote README.md:
+            {/* Native Markdown Document View */}
+            <Text style={styles.sectionHeading}>
+              📄 Generated Patch Preview:
             </Text>
-            <View style={styles.codeBox}>
-              <Text style={styles.codeText} numberOfLines={15}>
-                {readmeData}
-              </Text>
+            <View style={styles.markdownBox}>
+              <Markdown style={markdownStyles}>
+                {report.updatedDocumentation}
+              </Markdown>
             </View>
           </View>
-        ) : null}
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1e1e24',
-  },
-  header: {
-    marginVertical: 16,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#818cf8',
-    marginTop: 4,
-  },
+  container: { flex: 1, backgroundColor: '#1e1e24' },
+  header: { marginVertical: 12, alignItems: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
+  subtitle: { fontSize: 12, color: '#818cf8', marginTop: 2 },
   inputContainer: {
     backgroundColor: '#26262f',
-    padding: 16,
+    padding: 12,
     borderRadius: 10,
     marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  inputLabel: {
-    color: '#aaa',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-    marginTop: 8,
+    marginBottom: 8,
   },
   input: {
     backgroundColor: '#17171c',
     color: '#fff',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 6,
-    fontSize: 14,
+    fontSize: 13,
+    marginBottom: 8,
   },
   button: {
     backgroundColor: '#4f46e5',
-    padding: 14,
+    padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginHorizontal: 16,
     marginBottom: 12,
-    elevation: 2,
   },
-  buttonDisabled: {
-    backgroundColor: '#3730a3',
+  buttonDisabled: { backgroundColor: '#3730a3' },
+  buttonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
+  loadingStageText: {
+    color: '#c7d2fe',
+    fontSize: 12,
+    marginLeft: 10,
+    fontWeight: '500',
   },
   errorText: {
     color: '#ef4444',
     textAlign: 'center',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    fontWeight: '500',
-  },
-  logScrollView: {
-    flex: 1,
-    marginHorizontal: 16,
-    marginTop: 8,
-  },
-  logSection: {
-    marginBottom: 16,
-  },
-  sectionLabel: {
+    marginBottom: 10,
     fontSize: 13,
-    fontWeight: '700',
+  },
+  dashboardView: { flex: 1, marginHorizontal: 16 },
+  card: { padding: 16, borderRadius: 10, borderWidth: 1.5, marginBottom: 20 },
+  cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
+  cardExplanation: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  sectionHeading: {
     color: '#a5b4fc',
-    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
   },
-  codeBox: {
-    backgroundColor: '#0f0f11',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2d2d39',
-  },
-  codeText: {
-    color: '#34d399',
-    fontSize: 12,
-    fontFamily: 'monospace',
+  markdownBox: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 10,
+    minHeight: 200,
   },
 });
+
+// Custom markdown stylesheet overrides to look gorgeous on mobile
+const markdownStyles = {
+  body: { color: '#2c3e50', fontSize: 13, lineHeight: 19 },
+  heading1: {
+    color: '#1a1a1a',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eaecef',
+    paddingBottom: 4,
+  },
+  heading2: {
+    color: '#2c3e50',
+    fontSize: 15,
+    fontWeight: '600',
+    marginVertical: 6,
+  },
+  code_inline: {
+    backgroundColor: '#f1f5f9',
+    color: '#dc2626',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontFamily: 'monospace',
+    fontSize: 12,
+  },
+  fence: {
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 6,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+};
