@@ -96,6 +96,38 @@ To learn more about React Native, take a look at the following resources:
 - [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
 - [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
 
+# Payment Processing Module
+
+This project includes a `paymentProcessor.js` module responsible for handling cryptocurrency payment transactions and ensuring compliance with financial regulations.
+
+## `processCryptoPayment` Function
+
+This asynchronous function processes crypto payments, incorporating critical compliance and security checks.
+
+```javascript
+async function processCryptoPayment(userId, amountInBTC, rateToUSD) {
+  // ... implementation details ...
+}
+```
+
+### Parameters
+
+- `userId`: Identifier for the user initiating the payment.
+- `amountInBTC`: The amount of cryptocurrency (in Bitcoin) to be processed.
+- `rateToUSD`: The current exchange rate of Bitcoin to USD, used for compliance checks.
+
+### Compliance Verification
+
+Before processing, each transaction undergoes a compliance check to prevent high-value transactions from exceeding predefined limits. A `DAILY_MAX_LIMIT_USD` is enforced:
+
+- **Daily Maximum Limit**: Currently set at `$10,000`. Transactions exceeding this value will be rejected with a `Compliance Violation` error.
+
+### Cryptographic Verification
+
+All transactions require cryptographic verification using a Stripe webhook protocol to ensure authenticity and integrity.
+
+- **Requirement**: An environment variable `CRYPTO_SECRET_KEY` must be configured for signing transactions.
+
 # Automated Documentation Rot Sync
 
 This project now employs an autonomous documentation synchronization workflow to prevent "Documentation Rot".
