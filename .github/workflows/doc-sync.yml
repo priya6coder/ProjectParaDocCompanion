@@ -1,0 +1,31 @@
+name: Autonomous Documentation Rot Sync
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md' # Prevents the bot's own commits from re-triggering the workflow
+
+jobs:
+  audit-and-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Grants the cloud runner permission to push code updates back to your repo
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetches current and previous commit so git diff can run accurately
+
+      - name: Setup Node.js Runtime environment
+        uses: actions/setup-node@v4
+        with:
+          node-node-version: 20
+
+      - name: Run Auto-Documentation Pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided automatically by GitHub Actions
+        run: node scripts/auto-doc-sync.js
