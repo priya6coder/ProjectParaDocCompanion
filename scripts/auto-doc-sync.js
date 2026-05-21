@@ -2,11 +2,44 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
 
+// Helper function to pause execution for a few seconds
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(url, options, maxRetries = 3, delayMs = 2000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+
+      // If we hit a temporary server error (like 503 or 429 rate limit), retry
+      if (
+        (response.status === 503 || response.status === 429) &&
+        attempt < maxRetries
+      ) {
+        console.warn(
+          `⚠️ Gemini API returned status ${
+            response.status
+          }. Attempt ${attempt} of ${maxRetries}. Retrying in ${
+            delayMs / 1000
+          }s...`,
+        );
+        await delay(delayMs);
+        continue;
+      }
+
+      return response;
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      console.warn(`⚠️ Network error on attempt ${attempt}. Retrying...`);
+      await delay(delayMs);
+    }
+  }
+}
+
 async function runCloudSync() {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-  const REPO_REPOSITORY = process.env.GITHUB_REPOSITORY; // Provided automatically by GitHub format: "owner/repo"
-  const COMMIT_SHA = process.env.GITHUB_SHA; // The commit that triggered the push
+  const REPO_REPOSITORY = process.env.GITHUB_REPOSITORY;
+  const COMMIT_SHA = process.env.GITHUB_SHA;
 
   if (!GEMINI_API_KEY || !GITHUB_TOKEN) {
     console.error('Missing required environment authorization keys.');
@@ -19,7 +52,6 @@ async function runCloudSync() {
   );
 
   try {
-    // 1. Gather Local Diffs and Current Documentation directly from the runner workspace
     const commitMessage = execSync('git log -1 --pretty=%B').toString().trim();
     const codeDiff = execSync(`git diff HEAD~1 HEAD`).toString().trim();
 
@@ -37,7 +69,6 @@ async function runCloudSync() {
     }
     const currentReadme = fs.readFileSync(readmePath, 'utf8');
 
-    // 2. Fire the operational payload to the Gemini Engine
     const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     const prompt = `
@@ -58,7 +89,8 @@ async function runCloudSync() {
       EXISTING README.md: ${currentReadme}
     `;
 
-    const response = await fetch(GEMINI_URL, {
+    // Execute network payload using our new robust retry wrapper
+    const response = await fetchWithRetry(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -71,7 +103,10 @@ async function runCloudSync() {
     });
 
     if (!response.ok)
-      throw new Error(`Gemini connection dropped: ${response.status}`);
+      throw new Error(
+        `Gemini connection dropped with terminal status: ${response.status}`,
+      );
+
     const data = await response.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
@@ -80,14 +115,12 @@ async function runCloudSync() {
       `Analysis complete. Severity Level: ${report.severity}. Discrepancy Found: ${report.hasDiscrepancy}`,
     );
 
-    // 3. If a discrepancy exists, write the changes back directly in the runner workspace
     if (report.hasDiscrepancy) {
       fs.writeFileSync(readmePath, report.updatedDocumentation, 'utf8');
       console.log(
         '📝 README.md updated locally inside cloud runner. Ready to push updates.',
       );
 
-      // Execute git commands to push the fix back to the main branch securely
       execSync('git config --global user.name "DocRot Automation Bot"');
       execSync(
         'git config --global user.email "docrot-bot@users.noreply.github.com"',
@@ -95,7 +128,7 @@ async function runCloudSync() {
       execSync('git add README.md');
       execSync(
         'git commit -m "docs: auto-remedial sync to resolve documentation rot [skip ci]"',
-      ); // [skip ci] prevents infinite loops
+      );
       execSync('git push');
       console.log(
         '🎉 Successfully updated the remote Source of Truth on GitHub!',
